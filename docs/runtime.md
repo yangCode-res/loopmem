@@ -1,31 +1,9 @@
-# Core runtime
+# Runtime usage
 
-This directory contains the core memory runtime extracted from the experimental implementation. It accepts complete assistant tool-call batches and their paired results, lets a context-only boundary controller decide whether the batch begins a new work unit, archives the outgoing unit on a switch, plans the next unit from the archived handoff and observed batch, and recalls memory before each packed Researcher call.
-
-The package keeps the runtime's JSON schema, context projection, lexical loop index, local cross-encoder adapter, deterministic retrieval budget, context-only boundary contract, OpenAI-compatible JSON client, and transition-planning prompt. `OnlineMemorySession` is a narrow extraction of the original online context-only branch. It excludes the unified/global-state and legacy branches. The transport integration is intentionally outside this package.
-
-Run the offline protocol example with:
-
-```sh
-PYTHONPATH=src python examples/offline_mock.py
-```
-
-Run the offline tests with:
-
-```sh
-python -m unittest discover -s tests -v
-```
-
-The offline example uses scripted JSON responses only to demonstrate the runtime interface; it does not approximate the trained controller or planner. The API client can connect to an OpenAI-compatible endpoint through `OPENAI_API_KEY`, `LOOPMEM_OPENAI_BASE_URL`, and `LOOPMEM_OPENAI_MODEL`. The controller adapter and transition planner accept a client object implementing `complete_json(system_prompt, user_prompt)`.
-
-The local BGE reranker requires `torch`, `transformers`, and a separately provisioned model directory. No model weights are included. Those weights are required for the learned controller and cross-encoder behavior used by experiments. This extracted core implementation does not claim to reproduce every experiment or provide a complete benchmark reproduction environment.
-
-## Extraction notes
-
-- Boundary classification is post-result: a multi-tool action is classified only after every unique `tool_call_id` has a matching result.
-- On `SWITCH_LOOP`, the prior active events are archived; the just-observed action and all its results seed the incoming work unit.
-- Retrieval runs each time `build_prompt` packs context. Selected evidence is returned with its parent loop packet and active loop contract.
-- Budget defaults are 2/3 loops and 5/8 records, with score-gap, coverage, stagnation, repetition, and cooldown thresholds retained in `RetrievalBudgetConfig`.
+The controller classifies a complete tool-action/result batch after all results
+arrive. A switch archives the outgoing loop, seeds a new loop with the incoming
+batch, and invokes the planner. Continuation retains the objective and evidence
+needs. Historical evidence is recalled on every `build_prompt` call.
 
 ## Connecting model clients
 
@@ -35,9 +13,11 @@ your controller serving name and researcher serving name respectively:
 
 ```python
 import os
+import json
+from pathlib import Path
 from loopmem import (
     BGEReranker, ContextOnlyLoopBoundaryJudge, OnlineMemorySession,
-    OpenAIChatJSONClient, RetrievalBudgetGate, TransitionPlanner,
+    OpenAIChatJSONClient, RetrievalBudgetConfig, RetrievalBudgetGate, TransitionPlanner,
 )
 
 controller_client = OpenAIChatJSONClient(
@@ -50,12 +30,15 @@ planner_client = OpenAIChatJSONClient(
     model=os.environ["RESEARCHER_MODEL"],
     base_url=os.environ["RESEARCHER_BASE_URL"],
 )
+config = json.loads(Path("configs/runtime.json").read_text())
+budget = RetrievalBudgetGate(RetrievalBudgetConfig(**config.pop("retrieval_budget")))
 session = OnlineMemorySession(
     question="Which source establishes the requested date?",
     controller=ContextOnlyLoopBoundaryJudge(controller_client),
     planner=TransitionPlanner(planner_client),
     reranker=BGEReranker(os.environ["RERANKER_PATH"], device="cpu"),
-    budget_gate=RetrievalBudgetGate(),
+    budget_gate=budget,
+    **config,
 )
 ```
 

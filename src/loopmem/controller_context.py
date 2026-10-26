@@ -12,13 +12,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import json
-import re
 from typing import Any
 
 
 CONTEXT_ONLY_INPUT_SCHEMA = "context_only_boundary_input_v2"
 CONTEXT_ONLY_POST_RESULT_INPUT_SCHEMA = "context_only_boundary_input_v3_post_result"
-_WS_RE = re.compile(r"\s+")
 
 
 def _compact_text(value: Any, limit: int) -> str:
@@ -195,130 +193,9 @@ def compact_context_only_post_result_input(
     return value
 
 
-def compact_legacy_context_only_input(value: dict[str, Any]) -> dict[str, Any]:
-    """Convert a v1/v14 materialized sample to the v2 input contract.
-
-    This is deterministic, so existing labels can be reused without sending
-    protected questions or gold answers to another model.
-    """
-
-    if not isinstance(value, dict):
-        raise TypeError("context-only input must be an object")
-    current = [
-        *(value.get("active_loop_recent_messages") or []),
-        *(value.get("current_loop_recent_messages") or []),
-        *(value.get("recent_context_before_candidate") or []),
-    ]
-    # Preserve causal order while removing the duplicate overlap between the
-    # two legacy windows.
-    seen: set[str] = set()
-    unique: list[Any] = []
-    for event in current:
-        if isinstance(event, dict):
-            key = str(event.get("message_id") or "") or json.dumps(event, ensure_ascii=False, sort_keys=True)
-        else:
-            key = str(event)
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(event)
-    return compact_context_only_input(
-        question=value.get("task_summary") or value.get("question") or "",
-        active_loop=value.get("active_loop") or {},
-        current_events=unique,
-        candidate_action=value.get("candidate_action") or value.get("candidate_research_action"),
-    )
-
-
-def truncate_preserving_prefix_and_tail(
-    token_ids: Sequence[int],
-    *,
-    max_tokens: int,
-    prefix_tokens: int,
-) -> tuple[list[int], int]:
-    """Fit tokens while preserving the contract prefix and newest evidence.
-
-    Returns the retained token ids and the number of dropped tokens.  Controller
-    prompts consist of a stable system contract followed by causal evidence. If
-    the prompt is too long, the least useful region is the oldest evidence in
-    the middle, not the system contract at the beginning or newest evidence at
-    the end.
-    """
-
-    if max_tokens < 0:
-        raise ValueError("max_tokens must be non-negative")
-    if prefix_tokens < 0 or prefix_tokens > len(token_ids):
-        raise ValueError("prefix_tokens must identify a prefix of token_ids")
-    values = list(token_ids)
-    if len(values) <= max_tokens:
-        return values, 0
-    if max_tokens == 0:
-        return [], len(values)
-
-    kept_prefix = min(prefix_tokens, max_tokens)
-    tail_budget = max_tokens - kept_prefix
-    if tail_budget == 0:
-        retained = values[:kept_prefix]
-    else:
-        tail_start = max(prefix_tokens, len(values) - tail_budget)
-        retained = [*values[:kept_prefix], *values[tail_start:]]
-    if len(retained) > max_tokens:
-        raise AssertionError("context truncation exceeded its token budget")
-    return retained, len(values) - len(retained)
-
-
-def fit_controller_training_sequence(
-    prompt_ids: Sequence[int],
-    target_ids: Sequence[int],
-    *,
-    max_length: int,
-    prefix_tokens: int,
-    max_input_length: int | None = None,
-    max_target_length: int | None = None,
-) -> tuple[list[int], list[int], int]:
-    """Fit a Controller SFT example without corrupting its structured label.
-
-    ``max_length`` is the combined model sequence limit, while
-    ``max_input_length`` mirrors the prompt-only limit used at inference.  The
-    target is never truncated: a partial JSON label would teach invalid output,
-    so overlong targets fail closed instead.
-    """
-
-    if max_length <= 0:
-        raise ValueError("max_length must be positive")
-    if max_input_length is not None and max_input_length <= 0:
-        raise ValueError("max_input_length must be positive")
-    if max_target_length is not None and max_target_length <= 0:
-        raise ValueError("max_target_length must be positive")
-    targets = list(target_ids)
-    if max_target_length is not None and len(targets) > max_target_length:
-        raise ValueError(
-            f"target has {len(targets)} tokens, exceeding "
-            f"max_target_length={max_target_length}; refusing to truncate a "
-            "structured JSON label"
-        )
-    if len(targets) >= max_length:
-        raise ValueError(
-            f"target has {len(targets)} tokens, leaving no prompt budget under "
-            f"max_length={max_length}"
-        )
-    prompt_budget = max_length - len(targets)
-    if max_input_length is not None:
-        prompt_budget = min(prompt_budget, max_input_length)
-    retained_prompt, dropped = truncate_preserving_prefix_and_tail(
-        prompt_ids,
-        max_tokens=prompt_budget,
-        prefix_tokens=prefix_tokens,
-    )
-    return retained_prompt, targets, dropped
-
-
 __all__ = [
     "CONTEXT_ONLY_INPUT_SCHEMA",
     "CONTEXT_ONLY_POST_RESULT_INPUT_SCHEMA",
     "compact_context_only_input",
     "compact_context_only_post_result_input",
-    "compact_legacy_context_only_input",
-    "fit_controller_training_sequence",
-    "truncate_preserving_prefix_and_tail",
 ]

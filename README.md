@@ -21,9 +21,9 @@ evidence is recalled by selecting loops first and records second.
 | Loop- and record-level reranker training, Section 3.5 | `training/train_reranker.py` |
 | Retrospective annotation, Appendices B.2 and D.3 | `training/retrospective_annotation.py` |
 
-The runtime was extracted from the experimental implementation, retaining its
-controller and planner prompts, memory retrieval logic, and budget thresholds.
-The entry points are simplified to remove deployment-specific dependencies.
+The core routines and prompts were extracted from the experimental implementation.
+The public reference implementation includes the paper-alignment corrections
+listed in [CHANGELOG.md](CHANGELOG.md), with simplified deployment entry points.
 This release contains the core implementation, not a complete benchmark runner.
 Model weights, training trajectories, and experiment logs are not included.
 

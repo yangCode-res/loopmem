@@ -1,7 +1,6 @@
 """Causal semantic handoff planner from the frozen context-only runtime."""
 from __future__ import annotations
 import json
-import os
 from typing import Any
 from .client import OpenAIChatJSONClient
 from .prompts import BATCH_ALIGNMENT_PROMPT, PLANNER_PROMPT
@@ -17,11 +16,10 @@ target_relation, and completion_test. retrieval_request must contain subject_sco
 required_evidence, and key_entities. A proposal is a hypothesis, not evidence."""
 
 class TransitionPlanner:
-    def __init__(self, client: OpenAIChatJSONClient | None, *, contract_mode: str | None = None) -> None:
+    def __init__(self, client: OpenAIChatJSONClient) -> None:
+        if client is None:
+            raise ValueError("a transition planner client is required")
         self.client = client
-        self.contract_mode = contract_mode or os.getenv("LOOPMEM_LOOP_CONTRACT_MODE", "atomic")
-        if self.contract_mode not in {"legacy", "atomic"}:
-            raise ValueError("LOOPMEM_LOOP_CONTRACT_MODE must be legacy or atomic")
 
     @staticmethod
     def _text(value: Any, limit: int = 600) -> str:
@@ -37,21 +35,6 @@ class TransitionPlanner:
         observed_action: dict[str, Any],
         observed_result: str | list[dict[str, Any]],
     ) -> dict[str, Any]:
-        if not self.client:
-            return {
-                "next_loop": {
-                    "loop_description": "Observed evidence workstream",
-                    "target_relation": "Observed evidence relation",
-                    "completion_test": "The required evidence relation is established or ruled out.",
-                },
-                "retrieval_request": {
-                    "subject_scope": "",
-                    "target_relation": "Observed evidence relation",
-                    "required_evidence": "Relevant prior evidence",
-                    "key_entities": [],
-                },
-                "planner_error": "no transition planner client",
-            }
         payload = {
             "task_summary": self._text(task_summary, 800),
             "closed_loop_handoff": closed_loop_handoff or {},
@@ -63,9 +46,7 @@ class TransitionPlanner:
                 if isinstance(observed_result, list) else self._text(observed_result, 1200)
             ),
         }
-        system_prompt = TRANSITION_SYSTEM_PROMPT + BATCH_ALIGNMENT_PROMPT
-        if self.contract_mode == "atomic":
-            system_prompt += ATOMIC_CONTRACT_PROMPT
+        system_prompt = TRANSITION_SYSTEM_PROMPT + BATCH_ALIGNMENT_PROMPT + ATOMIC_CONTRACT_PROMPT
         raw = self.client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False))
         # Models may include harmless metadata (for example, a rationale or
         # confidence) alongside the two contracts.  Ignore such extras while
@@ -96,5 +77,4 @@ class TransitionPlanner:
         }
         if not all(clean_loop.values()) or not clean_request["target_relation"]:
             raise ValueError("transition planner returned empty semantic fields")
-        return {"next_loop": clean_loop, "retrieval_request": clean_request,
-                "contract_mode": self.contract_mode}
+        return {"next_loop": clean_loop, "retrieval_request": clean_request}

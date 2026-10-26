@@ -3,11 +3,11 @@
 Exact input contracts and synthetic schema examples are in
 [data formats](data_formats.md).
 
-This directory contains the core algorithms described in the paper: target-only controller SFT, reviewed offline boundary-policy refinement, graded listwise reranker training, and the two-pass retrospective workstream annotation prompts. It is not a complete reproduction of every final checkpoint. The release provides training entry points; trained weights and training trajectories are obtained separately.
+This directory contains the core algorithms described in the paper: target-only controller SFT, reviewed offline boundary-policy refinement, graded listwise reranker training, and the two-pass retrospective workstream annotation prompts. Trained weights and training trajectories are obtained separately.
 
 ## Controller SFT
 
-`training/controller_sft.py` accepts train and validation JSONL files. Each row has a `messages` array with exactly `system`, `user`, and `assistant` roles. The assistant message is the structured target; prompt tokens are masked with `-100`. LoRA uses rank 32, alpha 64, dropout 0.05. Inputs and outputs are explicit CLI arguments:
+`training/controller_sft.py` accepts train and validation JSONL files. Each row has a `messages` array with exactly `system`, `user`, and `assistant` roles. The assistant message is the structured target; prompt tokens are masked with `-100`. Valid target-token losses are summed per example and then averaged across examples. LoRA uses rank 32, alpha 64, dropout 0.05. Inputs and outputs are explicit CLI arguments:
 
 ```sh
 python -m training.controller_sft --base-model MODEL --train TRAIN.jsonl \
@@ -26,7 +26,7 @@ python -m training.train_controller_rl --base-model MODEL --adapter INITIAL_ADAP
   --data DATA_DIR --output OUTPUT_DIR
 ```
 
-The reward is a retrospective training signal, not a causal counterfactual estimate. Optional dependencies: PyTorch, Transformers, PEFT, and a compatible CUDA/bfloat16 runtime.
+This entry point requires PyTorch, Transformers, PEFT, and a compatible CUDA/bfloat16 runtime.
 
 ## Reranker
 
@@ -37,12 +37,20 @@ python -m training.train_reranker --model MODEL --events EVENTS.jsonl \
   --data-manifest MANIFEST.json --output-dir OUTPUT_DIR
 ```
 
-Optional dependencies: PyTorch and Transformers. Hyperparameters are CLI options; defaults are those of the extracted listwise training implementation. Set the command-line arguments for the training configuration you intend to run.
+This entry point requires PyTorch and Transformers. Hyperparameters are command-line options.
 
 ## Retrospective annotation
 
-`training/retrospective_annotation.py` includes the paper's two core prompts and a small two-pass runner. Pass one identifies atomic workstreams from recorded action intents. Pass two maps each action to the immutable inventory. The runner accepts a callable `complete_json(system_prompt, user_payload)` so no API provider or credential is embedded. The research pipeline also uses multiple candidate annotations, reconciliation/adjudication, trajectory validation, and causal-prefix reconstruction; those data-pipeline operations are not reproduced by this minimal prompt module. Retrospective annotation may inspect later progress, but the controller training inputs must be reconstructed from the context available at each decision.
+`training/retrospective_annotation.py` retains two core prompts and the original
+multi-view agreement/adjudication strategy. Each stage defaults to three views
+and three candidates (`views` and `candidate_count` are keyword options).
+Inventory agreement is accepted directly; disagreements are adjudicated using
+the inventory prompt. Assignment uses the fixed inventory, accepting agreement
+or a strict per-action majority, and adjudicating unresolved disagreements.
+Unused workstreams are removed and IDs are renumbered by first action use.
 
-## Provenance and limits
-
-The release includes code and synthetic examples only. It excludes model weights, private manifests, qid lists, raw trajectories, outcomes, API keys, local paths, and cluster job files. The extracted reranker trainer's reference distribution is fixed for the run; it does not refresh per epoch. No training job was run as part of packaging. A successful unit test of pure data/loss helpers does not establish that a model checkpoint was reproduced.
+The runner accepts `complete_json(system_prompt, user_payload)` as a callback.
+Production trajectory validation, outcome labeling, and reconstruction of causal
+controller inputs remain data-pipeline responsibilities. Only the decision-time
+prefix belongs in each controller input, even when retrospective labels use the
+whole recorded action sequence.

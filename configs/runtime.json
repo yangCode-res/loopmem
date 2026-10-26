@@ -1,8 +1,8 @@
 {
   "loop_candidate_limit": 12,
-  "loop_top_k": 3,
+  "top_k": 3,
   "record_top_k": 5,
-  "excerpt_character_limit": 1800,
+  "memory_text_limit": 1800,
   "retrieval_budget": {
     "default_loop_k": 2,
     "expanded_loop_k": 3,

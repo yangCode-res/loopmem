@@ -41,6 +41,23 @@ def target_only_labels(prompt_length: int, target_ids: Sequence[int]) -> list[in
     return [-100] * prompt_length + list(target_ids)
 
 
+def target_token_sum_batchmean_loss(logits: object, labels: object) -> object:
+    """Sum valid next-token losses per example, then average across the batch."""
+    import torch
+    import torch.nn.functional as F
+
+    shifted_logits = logits[..., :-1, :].contiguous()
+    shifted_labels = labels[..., 1:].contiguous()
+    token_losses = F.cross_entropy(
+        shifted_logits.reshape(-1, shifted_logits.size(-1)),
+        shifted_labels.reshape(-1),
+        ignore_index=-100,
+        reduction="none",
+    ).view(shifted_labels.shape)
+    per_example = token_losses.sum(dim=-1)
+    return per_example.mean()
+
+
 def read_messages(path: Path) -> list[list[dict[str, str]]]:
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     result = [row["messages"] for row in rows]
@@ -82,9 +99,7 @@ def train(args: argparse.Namespace) -> None:
     class TargetTrainer(Trainer):
         def compute_loss(self, model: object, inputs: dict[str, object], return_outputs: bool = False, **kwargs: object):
             out = model(**inputs)
-            logits = out.logits[..., :-1, :].contiguous()
-            labels = inputs["labels"][..., 1:].contiguous()
-            loss = torch.nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-100)
+            loss = target_token_sum_batchmean_loss(out.logits, inputs["labels"])
             return (loss, out) if return_outputs else loss
 
     set_seed(args.seed)

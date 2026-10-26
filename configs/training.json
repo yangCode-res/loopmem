@@ -3,7 +3,8 @@
     "lora_rank": 32,
     "lora_alpha": 64,
     "lora_dropout": 0.05,
-    "target_loss": "assistant_target_tokens_only"
+    "target_loss": "assistant_target_tokens_only",
+    "loss_reduction": "sum_target_tokens_then_mean_examples"
   },
   "controller_offline_rl": {
     "actions": ["CONTINUE", "SWITCH_LOOP"],

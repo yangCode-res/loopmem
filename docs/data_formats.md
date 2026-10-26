@@ -80,8 +80,12 @@ must not be copied as evidence that synthetic or unverified data passed an audit
 ## Retrospective annotation
 
 Call `annotate(question, action_intents, complete_json)` in
-`training/retrospective_annotation.py`. The callback returns parsed JSON. Pass
-one creates `workstreams` with consecutive IDs, descriptions, and completion
-conditions. Pass two receives this immutable inventory and returns one ID per
-recorded action. Only decision-time prefixes should be exposed later to the
-online controller; full-trajectory annotations are offline training labels.
+`training/retrospective_annotation.py`. The callback returns parsed JSON. The
+inventory stage and assignment stage each use multiple candidate perspectives,
+with agreement checks and adjudication of unresolved disagreements. Assignment
+receives an immutable inventory. Unused definitions are removed, then IDs are
+renumbered by first action use. Defaults are three views/candidates; set the
+`views` and `candidate_count` keyword options to change those counts.
+
+Only decision-time prefixes should later be exposed to the controller. Full
+recorded trajectories inform offline labels, not online boundary decisions.

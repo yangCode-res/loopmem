@@ -1,7 +1,6 @@
 """Small OpenAI-compatible JSON client extracted for the runtime adapter."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 import http.client
 import json
 import math
