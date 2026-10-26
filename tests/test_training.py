@@ -1,5 +1,6 @@
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -7,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from training.controller_sft import fit_prompt, target_only_labels, target_token_sum_batchmean_loss
-from training.build_controller_rl import reviewed_reward, split_qids
+from training.build_controller_rl import build, reviewed_reward, split_qids
 from training.retrospective_annotation import INVENTORY_SYSTEM_PROMPT, annotate
 
 
@@ -70,6 +71,40 @@ class TrainingCoreTests(unittest.TestCase):
         self.assertFalse({r["qid"] for r in train} & {r["qid"] for r in dev})
         self.assertEqual({r["target_action"] for r in train}, {"CONTINUE", "SWITCH_LOOP"})
         self.assertEqual({r["target_action"] for r in dev}, {"CONTINUE", "SWITCH_LOOP"})
+
+    def test_reviewed_samples_build_rewards_and_question_disjoint_files(self):
+        from training.build_controller_rl import sha
+
+        rows = [
+            {"sample_id": f"sample-{qid}-{action}", "qid": str(qid),
+             "messages": [{"role": "system", "content": "controller"},
+                          {"role": "user", "content": "observed decision-time input"}],
+             "target_action": action, "terminal_label": "CORRECT"}
+            for qid in range(6) for action in ("CONTINUE", "SWITCH_LOOP")
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "reviewed.jsonl"
+            source.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            original = source.read_bytes()
+            output = root / "prepared"
+            manifest = build(source, output)
+            train = [json.loads(line) for line in (output / "train.jsonl").read_text().splitlines()]
+            dev = [json.loads(line) for line in (output / "validation.jsonl").read_text().splitlines()]
+            self.assertFalse({row["qid"] for row in train} & {row["qid"] for row in dev})
+            self.assertAlmostEqual(sum(row["weight"] for row in train) / len(train), 1.0)
+            for row in train + dev:
+                self.assertEqual(row["reward"], [1.0, -1.5] if row["target_action"] == "CONTINUE" else [-2.0, 2.25])
+            self.assertEqual(manifest["files"]["train.jsonl"], sha(output / "train.jsonl"))
+            self.assertEqual(source.read_bytes(), original)
+            if __import__("importlib").util.find_spec("torch"):
+                from training.train_controller_rl import read_data
+                actual_train, actual_dev, _ = read_data(output)
+                self.assertEqual((actual_train, actual_dev), (train, dev))
+                with (output / "train.jsonl").open("a") as handle:
+                    handle.write("\n")
+                with self.assertRaisesRegex(ValueError, "hash mismatch"):
+                    read_data(output)
 
     def test_annotation_candidate_agreement_skips_adjudication(self):
         calls = []

@@ -18,10 +18,10 @@ The script truncates old prompt evidence while preserving the system prefix and 
 
 ## Offline controller RL
 
-`training/build_controller_rl.py` accepts a reviewed annotation bundle and materializes qid-disjoint train/validation data. It validates source hashes and causal `system`/`user` messages. `training/train_controller_rl.py` enumerates both actions on each context, computes exact old-policy expected-reward advantages, applies clipped updates, refreshes the behavior policy at each epoch start, and keeps the KL reference fixed at RL initialization. Reward order is `[CONTINUE, SWITCH_LOOP]`: `[1,-1.5]` for a reviewed continue and `[-2,2]` for a reviewed switch. A correct recorded final outcome adds `0.25` only to a switch matching the reviewed boundary label.
+`training/build_controller_rl.py` accepts reviewed decision samples in JSONL format and materializes question-disjoint train/validation data. It computes rewards from boundary labels and recorded outcomes, normalizes sample weights, and checks `system`/`user` input roles. `training/train_controller_rl.py` enumerates both actions on each context, computes exact old-policy expected-reward advantages, applies clipped updates, refreshes the behavior policy at each epoch start, and keeps the KL reference fixed at RL initialization. Reward order is `[CONTINUE, SWITCH_LOOP]`: `[1,-1.5]` for a reviewed continue and `[-2,2]` for a reviewed switch. A correct recorded final outcome adds `0.25` only to a switch matching the reviewed boundary label.
 
 ```sh
-python -m training.build_controller_rl --review REVIEW_BUNDLE --output DATA_DIR
+python -m training.build_controller_rl --review REVIEWED.jsonl --output DATA_DIR
 python -m training.train_controller_rl --base-model MODEL --adapter INITIAL_ADAPTER \
   --data DATA_DIR --output OUTPUT_DIR
 ```

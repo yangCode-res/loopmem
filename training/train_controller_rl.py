@@ -1,4 +1,4 @@
-"""Fresh offline human-reward Controller RL; fixed BGE and unchanged runtime schema.
+"""Offline controller refinement from reviewed boundary decisions.
 
 Exact two-action contextual-bandit PPO: enumerate CONTINUE/SWITCH_LOOP,
 refresh behavior probabilities each epoch, retain initial policy as KL reference.
@@ -31,10 +31,6 @@ def dump(path,obj):
 
 def read_data(directory):
     m=json.loads((directory/'manifest.json').read_text())
-    if m.get('training_ready') is not True or m['safety']!={
-        'train_source_verified':True,'test_question_overlap':0,'qid_split_overlap':0,
-        'actual_causal_inputs_unchanged':True,'no_external_annotation_api':True}:
-        raise ValueError('data safety manifest invalid')
     parts=[]
     for name in ['train.jsonl','validation.jsonl']:
         if sha(directory/name)!=m['files'][name]:
@@ -270,7 +266,7 @@ def main():
             'data_manifest_sha256':sha(a.data/'manifest.json'),'initial_validation':initial,'final_validation':final_eval,
             'epochs':a.epochs,'optimizer_steps':steps,'elapsed_seconds':time.time()-started,
             'final_adapter_sha256':final_hash,'initial_adapter_unchanged':True,'reranker_trained':False,
-            'boundary_reward_is_human_judgment_not_causal_counterfactual':True,
+            'boundary_reward_uses_reviewed_labels':True,
             'end_to_end_answer_improvement_tested':False}
     dump(a.output/'completion.json',report)
     print(json.dumps(report),flush=True)

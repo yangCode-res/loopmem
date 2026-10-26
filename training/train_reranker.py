@@ -2,7 +2,7 @@
 """Train BGE with exact event-level listwise policy gradients.
 
 Each retrieval event is one finite action space: the candidate loops or records
-that were available at that switch.  The initial BGE distribution is frozen in
+that were available at that retrieval. The initial BGE distribution is frozen in
 memory before optimization.  Training maximizes graded hindsight reward with a
 clipped policy ratio, while a listwise target and exact categorical KL keep the
 update stable.
@@ -24,7 +24,7 @@ from torch.utils.data import Dataset
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, set_seed
 
 
-SCHEMA_VERSION = "cl-gism-bge-listwise-policy-gradient-v1"
+SCHEMA_VERSION = "loopmem-bge-listwise-policy-gradient-v1"
 GAINS = {0: -1.0, 1: 0.25, 2: 1.0}
 
 
@@ -62,7 +62,7 @@ def read_events(path: Path) -> list[dict[str, Any]]:
         raise ValueError("reranker event file is empty")
     identities: set[str] = set()
     for index, row in enumerate(rows):
-        if row.get("schema_version") != "cl-gism-reranker-listwise-event-v1":
+        if row.get("schema_version") != "loopmem-reranker-listwise-event-v1":
             raise ValueError(f"row {index}: unexpected event schema")
         identity = str(row.get("event_id") or "")
         if not identity or identity in identities:

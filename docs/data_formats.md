@@ -16,29 +16,35 @@ inputs produced by `controller_context.py` when constructing training rows.
 Split source questions before creating train and validation files. The final
 assistant message is the target; its tokens alone receive labels in SFT.
 
-## Reviewed controller RL bundle
+## Reviewed controller RL samples
 
-`training/build_controller_rl.py` consumes a directory containing:
+`training/build_controller_rl.py` accepts one reviewed decision per JSONL row:
 
-| File | Required content |
-| --- | --- |
-| `events.jsonl` | Causal events with `event_id`, `qid`, `round`, `messages` (`system`, `user`), `runtime_action.decision`, and `trace_sha256`. |
-| `review-selection.jsonl` | Exact event rows selected for boundary review. |
-| `manual-boundaries.json` | `selection_sha256` and `groups`; each group has `ids` (event IDs), `label` (`CONTINUE`, `SWITCH_LOOP`, or `EXCLUDE`), and `reason`. |
-| `outcomes-private.jsonl` | One row per question with `qid` and the matching `trace_sha256`. This is an input filename, not a supplied dataset. |
-| `manual-outcomes.json` | `groups`, each with `qids`, `label` (`CORRECT`, `INCORRECT`, or `UNKNOWN`), and `reason`. |
-| `source-audit.json` | `training_safe`, `source_verified`, `events_sha256`, and `outcomes_sha256`. |
+```json
+{
+  "sample_id": "synthetic-boundary-001",
+  "qid": "0",
+  "messages": [
+    {"role": "system", "content": "The controller system prompt."},
+    {"role": "user", "content": "The serialized decision-time controller input."}
+  ],
+  "target_action": "SWITCH_LOOP",
+  "terminal_label": "CORRECT"
+}
+```
 
-The builder checks hashes, exact event identity, outcome-review coverage, and
-question-disjoint splits. It writes `train.jsonl`, `validation.jsonl`, and a
-`manifest.json` with file hashes. Each partition must contain both actions.
-Do not mark a source as training-safe without independently checking its origin
-and separation from held-out questions.
+Use the actual prompt and causal input format from `src/loopmem/prompts.py` and
+`controller_context.py`. `sample_id` must be unique and `qid` identifies the source
+question. `target_action` is `CONTINUE` or `SWITCH_LOOP`; the optional
+`terminal_label` is `CORRECT`, `INCORRECT`, or `UNKNOWN` (default). It describes
+the recorded trajectory's final answer, not a controller prediction.
 
-The materialized rows contain `sample_id`, `qid`, `messages`, `target_action`,
-`reward` (in `[CONTINUE, SWITCH_LOOP]` order), and `weight`. The trainer also
-records question IDs and hashes for local verification; do not publish those
-generated files as part of this anonymous code release.
+The builder computes both action rewards, splits by question, and writes
+`train.jsonl`, `validation.jsonl`, and a manifest of file hashes. Training weights
+balance switch labels and question contributions, then normalize to a global
+mean of one. Both partitions must contain both actions. The trainer checks file
+hashes and question separation. Input provenance and exclusion of benchmark
+evaluation questions must be verified before preparing these samples.
 
 ## Reranker events
 
@@ -46,7 +52,7 @@ Each JSONL event has the following structure:
 
 ```json
 {
-  "schema_version": "cl-gism-reranker-listwise-event-v1",
+  "schema_version": "loopmem-reranker-listwise-event-v1",
   "event_id": "synthetic-loop-001",
   "qid": "0",
   "trajectory_id": "synthetic-trajectory-001",

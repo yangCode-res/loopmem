@@ -31,3 +31,18 @@ reported experiment results have not been changed or regenerated.
 Tests exercise protocol and mathematical behavior with synthetic data. They do
 not reproduce the benchmark accuracies or establish performance for checkpoints
 trained with this revised implementation.
+
+## Core-release simplification
+
+- Replace the internal six-file manual-review bundle adapter with a direct
+  reviewed-sample JSONL interface. Retain the paper's rewards, question-disjoint
+  split, sample weighting, source/file hashes, and training-data validation.
+  Internal review-selection formats and audit assertions are no longer required.
+- Remove the requirement that annotation use no external API; retrospective
+  labels may be generated using a separate model as described in Appendix B.2.
+- Replace legacy project schema identifiers with `loopmem` identifiers. Clarify
+  that reranker events are retrieval events, not only loop-switch events.
+
+The core runtime, controller/reranker optimization, and annotation prompts are
+unchanged in this simplification. This remains a core-code release without
+trained checkpoints, research trajectories, or a full benchmark runner.
